@@ -1,13 +1,12 @@
 import os
 import openai
 import models
-import metrics
 import numpy as np
 import datasets
 import pandas as pd
 from typing import List
 import torch
-from jaxtyping import Float, Int, Bool, Str
+from jaxtyping import Float, Int, Bool
 from torch import Tensor
 from transformers import AutoModel, AutoTokenizer
 import argparse
@@ -37,11 +36,11 @@ def rephrase_question(sample, args):
     # send prompt to model
     # sample is the original prompt
     
-    prompt = '''Rephrase the following trivia question in your own words. The rephrased question should be asking the same thing as the original question, just expressed differently.
+    prompt = '''Rephrase the following trivia question in your own words. The rephrased question should ask the same thing as the original question, just expressed differently. The answer to the rephrased question should be the same as the answer to the original question.
 Original question: What is the capital city of Australia?
 Rephrased question: Which Australian city houses the country's parliament and serves as its capital?
 Original question: {}
-Rephrased question: '''.format(sample)
+Rephrased question:'''.format(sample)
     rephrase_args = vars(args).copy()
     rephrase_args['n_sample'] = 1
     # rephrase_args['model'] = 'gpt-4'
@@ -160,12 +159,12 @@ def get_average_embedding(outputs: List[str], model, tokenizer, to_numpy=True) -
 def get_average_embeddings():
     pass
 
-def get_cls_embeddings(outputs: torch.Tensor, model, tokenizer, to_numpy=True) -> torch.Tensor:
+def get_cls_embeddings(outputs: np.array, model, tokenizer, to_numpy=True) -> torch.Tensor:
     """
     Calculate the [CLS] token embeddings from the last layer of the model for multiple outputs.
     
     Args:
-        outputs: Tensor of strings with shape (batch_size,)
+        outputs: Array of strings with shape (batch_size,)
         model: The pre-trained model
         tokenizer: The tokenizer associated with the model
         to_numpy: Whether to convert the embeddings to a NumPy array (default: True)
@@ -173,7 +172,9 @@ def get_cls_embeddings(outputs: torch.Tensor, model, tokenizer, to_numpy=True) -
     Returns:
         sentence_embeddings: Tensor of shape (batch_size, embedding_dim)
     """
-    encoded_inputs = tokenizer(outputs.tolist(), padding=True, truncation=True, return_tensors='pt')
+    outputs = outputs.tolist()
+    encoded_inputs = tokenizer(outputs, padding=True, truncation=True, return_tensors='pt')
+
     with torch.no_grad():
         model_output = model(**encoded_inputs)
     
@@ -186,34 +187,72 @@ def get_cls_embeddings(outputs: torch.Tensor, model, tokenizer, to_numpy=True) -
     return sentence_embeddings
 
 def get_all_embeddings(
-    results: Str[Tensor, '...'],
+    results,
     model: AutoModel,
     tokenizer: AutoTokenizer,
     args: argparse.Namespace,
     normalize: bool = True,
     batch_size: int = 32,
-) -> Float[Tensor, '..., embedding_dim']:
+) -> Float[Tensor, '... embedding_dim']:
     input_shape = results.shape
-    output_shape = input_shape + (model.config.hidden_size,)
-    out = torch.zeros(output_shape)
-
-    results_flat = results.view(-1)
+    output_shape = model.config.hidden_size
+    out = torch.zeros(len(results.flatten()), output_shape)
+    
+    results_flat = results.flatten()
     num_batches = (len(results_flat) + batch_size - 1) // batch_size
-
+    
     for batch_idx in range(num_batches):
         start_idx = batch_idx * batch_size
         end_idx = min(start_idx + batch_size, len(results_flat))
         batch_responses = results_flat[start_idx:end_idx]
-
+        
         if args.embedding_model == 'sapbert':
             batch_embeddings = get_average_embeddings(batch_responses, model, tokenizer, to_numpy=False)
         else:
             batch_embeddings = get_cls_embeddings(batch_responses, model, tokenizer, to_numpy=False)
-
+        
         if normalize:
             batch_embeddings = batch_embeddings / torch.norm(batch_embeddings, dim=-1, keepdim=True)
-
-        out_flat = out.view(-1, model.config.hidden_size)
-        out_flat[start_idx:end_idx] = batch_embeddings
-
+        
+        out[start_idx:end_idx] = batch_embeddings
+    
+    out = out.view(*input_shape, -1)
     return out
+
+from sklearn.decomposition import PCA
+
+def get_pca_embeddings(results, model, tokenizer, args):
+    # TODO: check embedding dim
+    embedding_dim = 768
+    n_pca_components = 20
+    out = torch.zeros(len(results), len(results[0]['results']), len(results[0]['results'][0]['results']), n_pca_components)
+
+    for test_idx, test_sample in enumerate(results):
+        # aggregate embeddings in the test sample (i.e. across all perturbed samples)
+        # we do not yet know the dimension of the embedings
+        test_sample_embeddings = torch.zeros(len(test_sample['results']), len(test_sample['results'][0]['results']), embedding_dim)
+        for perturb_idx, perturbed_sample in enumerate(test_sample['results']):
+            perturbed_responses = [trial['response'] for trial in perturbed_sample['results']]
+            perturbed_embeddings = get_cls_embedding(perturbed_responses, model, tokenizer, to_numpy=False)
+            perturbed_embeddings = perturbed_embeddings / torch.norm(perturbed_embeddings, dim=1, keepdim=True)
+            test_sample_embeddings[perturb_idx, :, :] = perturbed_embeddings
+
+        
+        # Reshape test_sample_embeddings to perform PCA on the embedding dimension
+        test_sample_embeddings_reshaped = test_sample_embeddings.reshape(-1, embedding_dim)
+
+        # Convert the reshaped tensor to a NumPy array
+        test_sample_embeddings_np = test_sample_embeddings_reshaped.numpy()
+
+        # take pca on the reshaped test sample embeddings
+        pca = PCA(n_components=n_pca_components)
+        pca_embeddings = pca.fit_transform(test_sample_embeddings_np)
+
+        # Reshape the PCA embeddings back to the original shape
+        out[test_idx] = torch.from_numpy(pca_embeddings).reshape(len(test_sample['results']), len(test_sample['results'][0]['results']), n_pca_components)
+    
+    return out
+
+def get_most_frequent_completion(results):
+    for sample in results:
+        sample['most_frequent_completion'] = max(set(sample['response']), key=sample['response'].count)

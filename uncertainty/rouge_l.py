@@ -1,12 +1,14 @@
 from rouge import Rouge
-from typing import List, Str
+from typing import List
 from torch import Tensor
-from jaxtyping import Str
+from jaxtyping import Float
+import numpy as np
 
-def calculate_rouge_l(outputs: Str[Tensor, 'n_perturb * n_sample'], answer: str) -> float:
+def calculate_rouge_l(outputs: Float[Tensor, 'n_perturb * n_sample'], answer: str) -> float:
     '''
     Calculates the rouge-l score between the outputs and the answer
     '''
+    
     outputs = outputs.detach().cpu().tolist()
     rouge = Rouge()
     scores = []
@@ -15,10 +17,12 @@ def calculate_rouge_l(outputs: Str[Tensor, 'n_perturb * n_sample'], answer: str)
         scores.append(score['rouge-l']['f'])
     return sum(scores) / len(scores)
 
-def calculate_rouge_l_uncertainty(outputs: Str[Tensor, 'n_perturb * n_sample']) -> float:
-    # calculates the average rouge-l score between responses
-    # outputs to list
-    outputs = outputs.detach().cpu().tolist()
+def calculate_rouge_l_uncertainty(outputs: np.array) -> float:
+    '''
+    outputs: Float[Tensor, 'n_perturb * n_sample'])
+    Calculates the average rouge-l score between responses
+    '''
+
     rouge = Rouge()
     scores = []
 

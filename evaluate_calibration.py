@@ -1,33 +1,79 @@
 from sklearn.metrics import roc_auc_score
-from typing import List, Str
+from typing import List, Dict
 from torch import Tensor
-from jaxtyping import Str, Dict, Float
+from jaxtyping import Float, Bool
 import numpy as np
+import einops
+from tabulate import tabulate
+from matplotlib import pyplot as plt
 
-def calculate_roc_auc_all_results(
-        results: Str[Tensor, 'n_samples, n_perturb, n_responses'],
-        uncertainty_results: Dict[Str, Str[Tensor, 'n_samples, n_perturb, n_responses']],
-        accuracy_results: Dict[Str, Str[Tensor, 'n_samples, n_perturb, n_responses']],
-) -> Dict[Str, Str, Float]:
+def evaluate_calibration(
+    uncertainty_results: Dict[str, Float[Tensor, 'n_samples n_perturb n_responses']],
+    accuracy_results: Dict[str, Bool[Tensor, 'n_samples n_perturb n_responses']],
+) -> Dict[str, Float]:
+    confidence_metrics = 'rouge_l_uncertainty'
+    
+    # Create a dictionary to store the table data
+    table_data = {}
     
     # go through each combination of uncertainty and accuracy
     roc_auc_results = {}
     for uncertainty_type, uncertainty_tens in uncertainty_results.items():
+        if uncertainty_type not in confidence_metrics:
+            uncertainty_tens = 1 - uncertainty_tens
+        
+        if uncertainty_type not in table_data:
+            table_data[uncertainty_type] = {}
+        
         for accuracy_type, accuracy_tens in accuracy_results.items():
             roc_auc = calculate_roc_auc(uncertainty_tens, accuracy_tens)
             roc_auc_results[f'{uncertainty_type}_{accuracy_type}'] = roc_auc
+            
+            # Store the result in the table_data dictionary
+            table_data[uncertainty_type][accuracy_type] = f"{roc_auc:.3}"
+    
+    # Convert the table_data dictionary to a list of lists for tabulate
+    table_headers = ["Uncertainty Type"] + list(accuracy_results.keys())
+    table_rows = []
+    for uncertainty_type, accuracy_results in table_data.items():
+        row = [uncertainty_type] + [accuracy_results.get(acc_type, "-") for acc_type in table_headers[1:]]
+        table_rows.append(row)
+    
+    # Print the table
+    print("Calibration Evaluation Results:")
+    print(tabulate(table_rows, headers=table_headers, tablefmt="grid"))
+    print()
+
+    # TODO: create ROC plots
+
+    # # Create bar plots
+    # for accuracy_type in accuracy_results.keys():
+    #     plt.figure(figsize=(8, 6))
+    #     uncertainty_types = list(table_data.keys())
+    #     accuracy_values = [float(table_data[unc_type][accuracy_type]) for unc_type in uncertainty_types]
+        
+    #     plt.bar(uncertainty_types, accuracy_values)
+    #     plt.xlabel("Uncertainty Type")
+    #     plt.ylabel("Accuracy")
+    #     plt.title(f"Accuracy vs. Uncertainty ({accuracy_type})")
+    #     plt.xticks(rotation=45)
+    #     plt.tight_layout()
+    #     plt.show()
+    
     return roc_auc_results
 
 def calculate_roc_auc(
-        uncertainty_results: Str[Tensor, 'n_samples, n_perturb, n_responses'],
-        accuracy_results: Str[Tensor, 'n_samples, n_perturb, n_responses'],
-) -> Dict[Str, Str, Float]:
+        uncertainty_tens: Float[Tensor, 'n_samples n_perturb n_responses'],
+        accuracy_tens: Float[Tensor, 'n_samples n_perturb n_responses'],
+) -> Dict[str, Float]:
     '''
     Use uncertainty values to predict accuracy
     '''
-
-    uncertainty_vals = uncertainty_results.flatten().detach().cpu().numpy()
-    accuracy_vals = accuracy_results.flatten().detach().cpu().numpy()
+    # We only collect uncertainty values over each sample, so we need to repeat the uncertainty values for each perturbation and response
+    # TODO: in the future, we might actually want to look at the unique uncertainty values under each perturbation.
+    uncertainty_tens = einops.repeat(uncertainty_tens, 'n_samples -> n_samples n_perturb n_responses', n_perturb=accuracy_tens.shape[1], n_responses=accuracy_tens.shape[2])
+    uncertainty_vals = uncertainty_tens.flatten().detach().cpu().numpy()
+    accuracy_vals = accuracy_tens.flatten().detach().cpu().numpy()
     roc_auc = roc_auc_score(accuracy_vals, uncertainty_vals)
     return roc_auc
 
