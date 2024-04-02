@@ -11,16 +11,31 @@ from torch import Tensor
 from transformers import AutoModel, AutoTokenizer
 import argparse
 
+# TODO: this should go to config
+device = torch.device('mps') if torch.backends.mps.is_available() else torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
 openai.api_key = os.environ['OPENAI_API_KEY']
 
-def sample_to_prompt(question, **kwargs):
+def sample_to_prompt(question, full_sentence_response=False, **kwargs):
     if isinstance(question, list):
         return [sample_to_prompt(q, **kwargs) for q in question]
-    return f"""Answer these questions:
-Q: In Scotland a bothy/bothie is a?
-A: House
-Q: {question}
-A:"""
+    if full_sentence_response is False:
+        return f"""Answer the following questions. Your answers should be short, only a word or phrase. 
+    Q: Who won Super Bowl XX?
+    A: The Chicago Bears
+    Q: {question}
+    A:"""
+    else:
+        return f"""Answer the following questions. Respond to each question with a full sentence, including the context of the question in your answer.
+    Q: Who won Super Bowl XX?
+    A: The Chicago Bears won Super Bowl XX.
+    Q: {question}
+    A:"""
+
+def sample_to_prompt_zero_shot(question, **kwargs):
+    if isinstance(question, list):
+        return [sample_to_prompt_zero_shot(q, **kwargs) for q in question]
+    return question
 
 def perturb_sample(sample, args):
     if args.perturb_type == 'bootstrap':
@@ -43,7 +58,8 @@ Original question: {}
 Rephrased question:'''.format(sample)
     rephrase_args = vars(args).copy()
     rephrase_args['n_sample'] = 1
-    # rephrase_args['model'] = 'gpt-4'
+    rephrase_args['model'] = 'gpt-3.5-turbo'
+    rephrase_args['temperature'] = 0.7
     response = generate_response(prompt, argparse.Namespace(**rephrase_args))[0]
     return response
 
@@ -115,10 +131,6 @@ def load_dataset(args):
 def parse_response(response):
     response = response.split('\n')[0]
     response = response.strip()
-    if response.startswith('"') and response.endswith('"'):
-        response = response[1:-1]
-    elif response.startswith("'") and response.endswith("'"):
-        response = response[1:-1]
     return response
 
 def generate_response(prompt, args):
@@ -141,7 +153,9 @@ def mean_pooling(model_output, attention_mask):
 
 def get_average_embedding(outputs: List[str], model, tokenizer, to_numpy=True) -> torch.Tensor:
     # TODO: fix
+
     encoded_inputs = tokenizer(outputs, padding=True, truncation=True, return_tensors='pt')
+    encoded_inputs = encoded_inputs.to(device)
     
     # Compute token embeddings
     with torch.no_grad():
@@ -162,28 +176,35 @@ def get_average_embeddings():
 def get_cls_embeddings(outputs: np.array, model, tokenizer, to_numpy=True) -> torch.Tensor:
     """
     Calculate the [CLS] token embeddings from the last layer of the model for multiple outputs.
-    
+
     Args:
         outputs: Array of strings with shape (batch_size,)
         model: The pre-trained model
         tokenizer: The tokenizer associated with the model
         to_numpy: Whether to convert the embeddings to a NumPy array (default: True)
-        
+
     Returns:
         sentence_embeddings: Tensor of shape (batch_size, embedding_dim)
     """
     outputs = outputs.tolist()
+
+    # Move the model to the CPU
+    model = model.to('cpu')
+
     encoded_inputs = tokenizer(outputs, padding=True, truncation=True, return_tensors='pt')
+
+    # Move the encoded inputs to the CPU
+    encoded_inputs = {k: v.to('cpu') for k, v in encoded_inputs.items()}
 
     with torch.no_grad():
         model_output = model(**encoded_inputs)
-    
+
     # Get the [CLS] token embeddings from the last layer
     sentence_embeddings = model_output.last_hidden_state[:, 0, :]
-    
+
     if to_numpy:
         sentence_embeddings = sentence_embeddings.cpu().numpy()
-    
+
     return sentence_embeddings
 
 def get_all_embeddings(

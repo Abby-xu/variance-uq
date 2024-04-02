@@ -41,27 +41,40 @@ def generate_responses(args) -> np.ndarray:
         example_responses = []
         example_answers = []
 
-        for idx_perturb in range(args.n_perturb):
+        # if we turn perturbation off, we only generate one question for each example
+        # and that question is the original question
+        if args.do_perturb == False:
+            n_perturb = 1
+        else:
+            n_perturb = args.n_perturb
+
+        for idx_perturb in range(n_perturb):
             perturb_questions = []
             perturb_responses = []
             perturb_answer_results = []
 
-            perturbed_sample = data_utils.perturb_sample(input, args)
-
-            if args.dataset == 'geneset':
-                prompt = data_utils.geneset_sample_to_prompt(perturbed_sample)
+            if args.do_perturb is True:
+                sample = data_utils.perturb_sample(input, args)
             else:
-                prompt = data_utils.sample_to_prompt(perturbed_sample)
+                sample = input
+            
+            if args.dataset == 'geneset':
+                prompt = data_utils.geneset_sample_to_prompt(sample)
+            else:
+                if args.prompt_type == 'few_shot':
+                    prompt = data_utils.sample_to_prompt(sample)
+                else:
+                    prompt = data_utils.sample_to_prompt_zero_shot(sample) # redundant, just returns prompt
 
             sample_responses = data_utils.generate_response(prompt, args)
 
-            perturb_questions.append(perturbed_sample)
+            perturb_questions.append(sample)
             perturb_responses.extend(sample_responses)
             perturb_answer_results.extend([answer] * len(sample_responses))
 
             print(f"\nPerturbation {idx_perturb + 1}")
             print("~" * 10)
-            print(f"Perturbed Question: {perturbed_sample}")
+            print(f"Perturbed Question: {sample}")
             print("Responses:")
             for idx, response in enumerate(sample_responses):
                 print(f"{idx + 1}. {response}")

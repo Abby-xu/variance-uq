@@ -2,7 +2,6 @@ import os
 import openai
 import backoff
 
-
 completion_tokens = prompt_tokens = 0
 
 api_key = os.getenv("OPENAI_API_KEY", "")
@@ -10,13 +9,17 @@ if api_key != "":
     openai.api_key = api_key
 else:
     print("Warning: OPENAI_API_KEY is not set")
-    
+
 api_base = os.getenv("OPENAI_API_BASE", "")
 if api_base != "":
     print("Warning: OPENAI_API_BASE is set to {}".format(api_base))
     openai.api_base = api_base
 
-@backoff.on_exception(backoff.expo, openai.error.OpenAIError)
+def on_giveup(details):
+    print(f"Giving up after {details['tries']} tries.")
+    return None
+
+@backoff.on_exception(backoff.expo, openai.error.OpenAIError, max_tries=5, on_giveup=on_giveup)
 def completions_with_backoff(**kwargs):
     return openai.ChatCompletion.create(**kwargs)
 
@@ -26,7 +29,7 @@ def gpt(system_prompt, prompt, model="gpt-4", temperature=0.7, max_tokens=1000, 
     else:
         messages = [{"role": "user", "content": prompt}]
     return chatgpt(messages, model=model, temperature=temperature, max_tokens=max_tokens, n=n, stop=stop)
-    
+
 def chatgpt(messages, model="gpt-4", temperature=0.7, max_tokens=1000, n=1, stop=None, json=False) -> list:
     global completion_tokens, prompt_tokens
     outputs = []
@@ -34,20 +37,23 @@ def chatgpt(messages, model="gpt-4", temperature=0.7, max_tokens=1000, n=1, stop
         cnt = min(n, 20)
         n -= cnt
         if json:
-            res = completions_with_backoff(model=model, messages=messages, temperature=temperature, max_tokens=max_tokens, n=cnt, stop=stop,  response_format={'type': 'json_object'})
+            res = completions_with_backoff(model=model, messages=messages, temperature=temperature, max_tokens=max_tokens, n=cnt, stop=stop, response_format={'type': 'json_object'})
         else:
             res = completions_with_backoff(model=model, messages=messages, temperature=temperature, max_tokens=max_tokens, n=cnt, stop=stop)
+        if res is None:
+            return None
         outputs.extend([choice["message"]["content"] for choice in res["choices"]])
         # log completion tokens
         completion_tokens += res["usage"]["completion_tokens"]
         prompt_tokens += res["usage"]["prompt_tokens"]
+    print(gpt_usage(model))
     return outputs
-    
+
 def gpt_usage(backend="gpt-4"):
-    # TODO: I think cost has been changed
     global completion_tokens, prompt_tokens
     if backend == "gpt-4":
         cost = completion_tokens / 1000 * 0.06 + prompt_tokens / 1000 * 0.03
-    elif backend == "gpt-3.5-turbo":
-        cost = completion_tokens / 1000 * 0.002 + prompt_tokens / 1000 * 0.0015
+    # elif backend == "gpt-3.5-turbo":
+    else:  # assume gpt-3.5
+        cost = completion_tokens / 1000 * 0.0015 + prompt_tokens / 1000 * 0.0005
     return {"completion_tokens": completion_tokens, "prompt_tokens": prompt_tokens, "cost": cost}
