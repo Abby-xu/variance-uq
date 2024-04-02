@@ -19,6 +19,7 @@ def evaluate_calibration(
     # go through each combination of uncertainty and accuracy
     roc_auc_results = {}
     for uncertainty_type, uncertainty_tens in uncertainty_results.items():
+        print(f"Calculating ROC AUC for {uncertainty_type}...")
         if uncertainty_type not in confidence_metrics:
             uncertainty_tens = 1 - uncertainty_tens
         

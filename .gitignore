@@ -1,3 +1,5 @@
 results/
 results.csv
 responses/
+*.pkl
+*.pyc
