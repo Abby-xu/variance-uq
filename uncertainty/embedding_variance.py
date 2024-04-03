@@ -96,11 +96,11 @@ def calculate_uncertainty_at_pos_from_results(sample: torch.Tensor, uncertainty_
     data uncertainty: average variance of each perturbed sample
     total uncertainty: variance of all perturbed samples
     '''
-    if uncertainty_type == 'model':
+    if uncertainty_type == 'data':
         # Compute the mean across n_samples and then the variance across n_perturbed_samples
         mean_across_samples = sample.mean(dim=-1)
         uncertainty = mean_across_samples.var(dim=1, unbiased=False)
-    elif uncertainty_type == 'data':
+    elif uncertainty_type == 'model':
         # Compute variance for each perturbed sample across n_samples and average them
         var_across_samples = torch.var(sample, dim=2, unbiased=False)
         uncertainty = var_across_samples.mean(dim=1)
