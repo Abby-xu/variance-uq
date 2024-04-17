@@ -1,7 +1,12 @@
 from transformers import AutoModel, AutoTokenizer
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+import torch
+import config
+
+device = config.device
 
 def get_entailment_model():
-    return AutoModel.from_pretrained("microsoft/deberta-v2-xlarge-mnli")
+    return AutoModelForSequenceClassification.from_pretrained("microsoft/deberta-large-mnli").to(device)
 
 def get_entailment_tokenizer():
-    return AutoTokenizer.from_pretrained("microsoft/deberta-v2-xlarge-mnli")
+    return AutoTokenizer.from_pretrained("microsoft/deberta-large-mnli")

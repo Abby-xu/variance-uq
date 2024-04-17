@@ -10,11 +10,30 @@ from jaxtyping import Float, Int, Bool
 from torch import Tensor
 from transformers import AutoModel, AutoTokenizer
 import argparse
+import json
 
-# TODO: this should go to config
-device = torch.device('mps') if torch.backends.mps.is_available() else torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+device = config.device
+openai.api_key = config.openai_api_key
 
-openai.api_key = os.environ['OPENAI_API_KEY']
+def load_questions(args):
+    questions_dir = 'questions'
+    questions_filename = f'{args.dataset}.json'
+    questions_filename = os.path.join(questions_dir, questions_filename)
+    questions = load_json(questions_filename)
+    return questions
+
+def load_json(filename):
+    with open(filename, 'r') as f:
+        dic = json.load(f)
+        dic = {int(k): v for k, v in dic.items()}
+    return dic
+    
+def sample_from_perturbed_questions(idx, perturbed_questions, args):
+    n_perturb = args.n_perturb
+    perturbed_questions = perturbed_questions[idx]
+    assert len(list(set(perturbed_questions))) >= n_perturb, f"Number of perturbed questions ({len(perturbed_questions)}) is less than the number of perturbations requested ({n_perturb})."
+    perturbed_questions = np.random.choice(perturbed_questions, n_perturb, replace=False)
+    return perturbed_questions
 
 def sample_to_prompt(question, full_sentence_response=False, **kwargs):
     if isinstance(question, list):
@@ -50,16 +69,17 @@ def perturb_sample(sample, args):
 def rephrase_question(sample, args):
     # send prompt to model
     # sample is the original prompt
-    
-    prompt = '''Rephrase the following trivia question in your own words. The rephrased question should ask the same thing as the original question, just expressed differently. The answer to the rephrased question should be the same as the answer to the original question.
+
+    prompt = '''Rephrase the following trivia question in your own words. The rephrased question should preserve the meaning of the original question, but be worded differently. The answer to the rephrased question should be the same as the answer to the original question. You can be creative.
 Original question: What is the capital city of Australia?
-Rephrased question: Which Australian city houses the country's parliament and serves as its capital?
+Rephrased question: Which Australian city serves as the country's capital?
 Original question: {}
 Rephrased question:'''.format(sample)
     rephrase_args = vars(args).copy()
     rephrase_args['n_sample'] = 1
-    rephrase_args['model'] = 'gpt-3.5-turbo'
-    rephrase_args['temperature'] = 0.7
+    # rephrase_args['model'] = 'gpt-3.5-turbo'
+    rephrase_args['model'] = 'gpt-4'
+    rephrase_args['temperature'] = 0.9
     response = generate_response(prompt, argparse.Namespace(**rephrase_args))[0]
     return response
 
@@ -77,7 +97,7 @@ def geneset_sample_to_prompt(sample: List[str]):
     serialized_sample = ', '.join(sample)
     return f"Give a name for the most prominent biological process performed by the following set of genes: {serialized_sample}."
 
-def load_dataset(args):
+def load_dataset(args, shuffle=False):
     if args.dataset == 'trivia_qa':
         split = 'validation'
         data = datasets.load_dataset("trivia_qa", "rc.nocontext", split=split)
@@ -95,36 +115,22 @@ def load_dataset(args):
         # Convert the dataset to a list of dictionaries with only "index", "input", and "answer" keys
         data = [{'index': i, 'input': _['question'], 'answer': _['answer']}
                 for i, _ in enumerate(data)]
+        
+        if shuffle:
+            np.random.shuffle(data)
+
         # only choose args.n_test samples
         data = data[:args.n_test]
         return data
     
-    elif args.dataset == 'geneset':
-        # TODO: exclude examples over a certain number of genes?
-        filename = 'geneset.csv'
-        # create file if it does not exist already
-        if not os.path.exists(filename):
-            x_filename = '/Users/kylecox/Documents/ws/tot-gene-sets/src/tot/data/gene_sets/x_eval.txt'
-            y_filename = '/Users/kylecox/Documents/ws/tot-gene-sets/src/tot/data/gene_sets/y_eval.txt'
-            with open(x_filename, 'r') as f:
-                x = f.readlines()
-            x = [d.strip() for d in x]
-            x = {i: d for i, d in enumerate(x)}
-            with open(y_filename, 'r') as f:
-                y = f.readlines()
-            y = [d.strip() for d in y]
-            y = {i: d for i, d in enumerate(y)}
-            data = []
-            for i in range(len(x)):
-                data.append({'index': i, 'input': x[i], 'answer': y[i]})
-            data = pd.DataFrame(data)
-            data.to_csv(filename)
-        data = pd.read_csv(filename)
-        data['index'] = data.index
-        data = data.to_dict(orient='records')
-        # choose all the 0 through args.n_test-1 samples
-        return data[:args.n_test]
+    elif args.dataset == 'coqa':
+        # conversational qa
+        raise NotImplementedError
 
+    elif args.dataset == 'nq':
+        # natural questions
+        raise NotImplementedError
+    
     else:
         raise NotImplementedError
 

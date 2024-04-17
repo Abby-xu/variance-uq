@@ -1,17 +1,21 @@
 import models
 import argparse
+import torch
+import os
 
 # TODO: make global config variable to replace args
 
+# should probably move dataset here too
+
+device = torch.device('mps') if torch.backends.mps.is_available() else torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+openai_api_key = os.environ['OPENAI_API_KEY']
+
 def initialize_components(args):
     if args is None:
-        # model = models.get_mpnet_model()
-        # tokenizer = models.get_mpnet_tokenizer()
-        # return model, tokenizer
         tokenizer = models.get_mpnet_tokenizer()
         model = models.get_mpnet_model()
         return tokenizer, model
-
+    
     if args.embedding_model == 'bert':
         tokenizer = models.get_bert_tokenizer()
         model = models.get_bert_model()

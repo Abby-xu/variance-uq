@@ -27,6 +27,8 @@ def evaluate_uncertainty(responses, tokenizer: AutoTokenizer, model: AutoModel, 
     # TODO: add semantic entropy
     '''
 
+    classify_wrapper = uncertainty.ClassifyWrapper()
+
     if concat_responses:
         new_responses = np.vectorize(concatenate_strings)(original_questions, responses)
         embeddings = data_utils.get_all_embeddings(new_responses, model, tokenizer, args)
@@ -57,17 +59,21 @@ def evaluate_uncertainty(responses, tokenizer: AutoTokenizer, model: AutoModel, 
 
     exact_match_uncertainty = torch.zeros(responses.shape[0])
     rouge_l_uncertainty = torch.zeros(responses.shape[0])
-    num_sets_uncertainty = torch.zeros(responses.shape[0])
+    # num_sets_uncertainty = torch.zeros(responses.shape[0])
+    semantic_entropy_uncertainty = torch.zeros(responses.shape[0])
 
     for idx in range(responses.shape[0]):
         sample_results = responses[idx].flatten()
         original_question = original_questions[idx, 0, 0]
         exact_match_uncertainty[idx] = uncertainty.calculate_exact_match_entropy(sample_results)
         rouge_l_uncertainty[idx] = uncertainty.calculate_rouge_l_uncertainty(sample_results)
-        num_sets_uncertainty[idx] = uncertainty.calculate_num_semantic_sets(original_question, sample_results)
+        # num_sets_uncertainty[idx] = uncertainty.calculate_num_semantic_sets(original_question, sample_results)
+        semantic_entropy_uncertainty[idx] = uncertainty.calculate_semantic_entropy(original_question, sample_results, classify_wrapper)
+        print(idx, semantic_entropy_uncertainty[idx])
 
     uncertainty_results['exact_match_uncertainty'] = exact_match_uncertainty
     uncertainty_results['rouge_l_uncertainty'] = rouge_l_uncertainty
-    uncertainty_results['num_sets_uncertainty'] = num_sets_uncertainty
+    # uncertainty_results['num_sets_uncertainty'] = num_sets_uncertainty
+    uncertainty_results['semantic_entropy_uncertainty'] = semantic_entropy_uncertainty
 
     return uncertainty_results

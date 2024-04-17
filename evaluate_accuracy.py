@@ -8,6 +8,8 @@ from jaxtyping import Float, Int, Bool
 from torch import Tensor
 from utils import *
 
+# TODO: add cache for accuracy eval
+
 def evaluate_accuracy(
         questions,
         results,
@@ -24,6 +26,8 @@ def evaluate_accuracy(
         'ask_for_accuracy': Bool[Tensor, 'n_samples n_perturb n_responses'],
     }
 
+    cache_ask_for_accuracy = {}
+    
     exact_match_accuracy_results = torch.zeros(*results.shape)
     ask_for_accuracy_results = torch.zeros(*results.shape)
 
@@ -36,7 +40,11 @@ def evaluate_accuracy(
                 answer = answers[sample_idx, perturb_idx, response_idx]
                 response = results[sample_idx, perturb_idx, response_idx]
                 exact_match = evaluation.calculate_exact_match(response, answer)
-                ask_for_accuracy = evaluation.calculate_ask_for_accuracy(question, response, answer, args)
+                if (question, response) in cache_ask_for_accuracy:
+                    ask_for_accuracy = cache_ask_for_accuracy[(question, response)]
+                else:
+                    ask_for_accuracy = evaluation.calculate_ask_for_accuracy(question, response, answer, args)
+                    cache_ask_for_accuracy[(question, response)] = ask_for_accuracy
                 exact_match_accuracy_results[sample_idx, perturb_idx, response_idx] = exact_match
                 ask_for_accuracy_results[sample_idx, perturb_idx, response_idx] = ask_for_accuracy
     

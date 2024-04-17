@@ -1,4 +1,3 @@
-import openai
 from utils import data_utils
 import numpy as np
 import einops
@@ -10,31 +9,33 @@ def generate_responses(args) -> np.ndarray:
     '''
 
     original_questions = []
-    questions = []
+    perturbed_questions = []
     responses = []
     answers = []
 
     dataset = data_utils.load_dataset(args)
+    if args.do_perturb: # if we are doing the perturbation, assume we have already run the perturbation script
+        perturbed_questions_dict = data_utils.load_questions(args)
 
     print("=" * 50)
     print("Generating Responses".center(50))
     print("=" * 50)
 
     for idx_test, data in enumerate(dataset):
+        # hopefully keep this same structure for all datasets
         if args.dataset == 'trivia_qa':
-            input = data['input']
+            idx = data['index']
+            inp = data['input']
             answer = data['answer']['value']
-        elif args.dataset == 'geneset':
-            input = data['input'].split(' ')
-            answer = data['answer']
+        # TODO: coqa, nq
         else:
             raise NotImplementedError
 
-        original_questions.append((einops.repeat(np.array([input]), 'b -> b n_perturb n_sample', b=1, n_perturb=args.n_perturb, n_sample=args.n_sample)).tolist()[0])
+        original_questions.append((einops.repeat(np.array([inp]), 'b -> b n_perturb n_sample', b=1, n_perturb=args.n_perturb, n_sample=args.n_sample)).tolist()[0])
 
         print(f"\nQuestion {idx_test + 1}")
         print("-" * 20)
-        print(f"Original Question: {input}")
+        print(f"Original Question: {inp}")
         print(f"Answer: {answer}")
 
         example_questions = []
@@ -43,52 +44,46 @@ def generate_responses(args) -> np.ndarray:
 
         # if we turn perturbation off, we only generate one question for each example
         # and that question is the original question
-        if args.do_perturb == False:
+        if args.do_perturb is False:
             n_perturb = 1
+            sample_perturb_questions = [inp]
         else:
             n_perturb = args.n_perturb
+            sample_perturb_questions = data_utils.sample_from_perturbed_questions(idx, perturbed_questions_dict, args)
 
         for idx_perturb in range(n_perturb):
-            perturb_questions = []
-            perturb_responses = []
-            perturb_answer_results = []
+            sample_perturbed_question = sample_perturb_questions[idx_perturb]
+            sample_perturbed_questions = []
+            sample_perturbed_responses = []
+            sample_perturbed_answer_results = []
 
-            if args.do_perturb is True:
-                sample = data_utils.perturb_sample(input, args)
+            if args.prompt_type == 'few_shot':
+                prompt = data_utils.sample_to_prompt(sample_perturbed_question)
             else:
-                sample = input
-            
-            if args.dataset == 'geneset':
-                prompt = data_utils.geneset_sample_to_prompt(sample)
-            else:
-                if args.prompt_type == 'few_shot':
-                    prompt = data_utils.sample_to_prompt(sample)
-                else:
-                    prompt = data_utils.sample_to_prompt_zero_shot(sample) # redundant, just returns prompt
+                prompt = data_utils.sample_to_prompt_zero_shot(sample_perturbed_question) # redundant, just returns prompt
 
             sample_responses = data_utils.generate_response(prompt, args)
-
-            perturb_questions.append(sample)
-            perturb_responses.extend(sample_responses)
-            perturb_answer_results.extend([answer] * len(sample_responses))
+            sample_perturbed_questions.append(sample_perturbed_question)
+            sample_perturbed_responses.extend(sample_responses)
+            sample_perturbed_answer_results.extend([answer] * len(sample_responses))
 
             print(f"\nPerturbation {idx_perturb + 1}")
             print("~" * 10)
-            print(f"Perturbed Question: {sample}")
+            print(f"Perturbed Question: {sample_perturbed_question}")
             print("Responses:")
             for idx, response in enumerate(sample_responses):
                 print(f"{idx + 1}. {response}")
 
-            example_questions.append(perturb_questions)
-            example_responses.append(perturb_responses)
-            example_answers.append(perturb_answer_results)
+            example_questions.append(sample_perturbed_questions)
+            example_responses.append(sample_perturbed_responses)
+            example_answers.append(sample_perturbed_answer_results)
 
-        questions.append(example_questions)
+        perturbed_questions.append(example_questions)
         responses.append(example_responses)
         answers.append(example_answers)
 
     original_questions_array = np.array(original_questions, dtype=str)
-    questions_array = np.array(questions, dtype=str)
+    perturbed_questions_array = np.array(perturbed_questions, dtype=str)
     responses_array = np.array(responses, dtype=str)
     answers_array = np.array(answers, dtype=str)
 
@@ -96,8 +91,5 @@ def generate_responses(args) -> np.ndarray:
     print("Response Generation Complete".center(50))
     print("=" * 50)
 
-    return original_questions_array, questions_array, responses_array, answers_array
+    return original_questions_array, perturbed_questions_array, responses_array, answers_array
 
-if __name__ == "__main__":
-    {'index': 199, 'input': 'Who did Jack Ruby shoot in November 1963?', 'answer': {'aliases': ['Oswald the Lone Assassin', 'Lone Nut Theory', 'Lone gunman', 'Lee Oswald', 'Lee H. Oswald', 'A.J. Hidell', 'L.H.O.', 'L. H. Oswald', 'L.H.O', 'Alek J. Hidell', 'Maria Oswald Porter', 'Lee harvey oswald', 'Lee Harvey Oswald (photo)', "Lee Harvey Oswald's", 'Lee Harvey Oswald', 'Lee harvy oswald', 'Lone gunman theory', 'Alek James Hidell', 'Lee Harvey Ostwald'], 'normalized_aliases': ['lee harvey oswald', 'lone nut theory', 'oswald lone assassin', 'l h oswald', 'lee oswald', 'lee harvey ostwald', 'lee h oswald', 'alek james hidell', 'lee harvy oswald', 'j hidell', 'lee harvey oswald photo', 'lone gunman', 'l h o', 'lee harvey oswald s', 'maria oswald porter', 'alek j hidell', 'lone gunman theory'], 'matched_wiki_entity_name': '', 'normalized_matched_wiki_entity_name': '', 'normalized_value': 'lee harvey oswald', 'type': 'WikipediaEntity', 'value': 'Lee Harvey Oswald'}}
-    pass

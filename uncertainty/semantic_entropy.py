@@ -1,6 +1,10 @@
 import generate_responses
 from models import gpt
 import argparse
+import torch
+from typing import List
+import models
+import numpy as np
 
 
 def get_prompt(question, responses):
@@ -70,7 +74,7 @@ def calculate_num_semantic_sets(question, responses):
     n_sample = 1
     temperature = 0
     model = 'gpt-3.5-turbo'
-    raw_response = gpt(system_prompt=None, prompt=prompt, model=model, n=n_sample, temperature=temperature, max_tokens=4096)[0]
+    raw_response = models.gpt(system_prompt=None, prompt=prompt, model=model, n=n_sample, temperature=temperature, max_tokens=4096)[0]
     print('Raw Response:', raw_response)
     num_semantic_sets = parse_response(raw_response)
     print('Number of Semantic Classes:', num_semantic_sets)
@@ -82,22 +86,64 @@ def get_response(prompt):
     # grade with gpt-4, could change
     # model = 'gpt-4'
     model = 'gpt-3.5-turbo'
-    raw_response = gpt(system_prompt=None, prompt=prompt, model=model, n=n_sample, temperature=temperature)[0]
+    raw_response = models.gpt(system_prompt=None, prompt=prompt, model=model, n=n_sample, temperature=temperature)[0]
     return parse_response(raw_response)
 
 
-
-import torch
-
+def calculate_semantic_entropy(question, responses, wrapper):
+    # TODO: add this to config
+    return wrapper.get_semantic_entropy(question, responses)
 
 class ClassifyWrapper():
-
-    def __init__(self, model_name='microsoft/deberta-large-mnli', device='cuda:3') -> None:
+    # TODO: double check this is the same model used in the original paper
+    def __init__(self, model_name='microsoft/deberta-large-mnli') -> None:
         self.model_name = model_name
-        self.model, self.tokenizer = models.load_model_and_tokenizer(model_name, device)
+        self.model, self.tokenizer = models.get_entailment_model(), models.get_entailment_tokenizer()
 
-        pass
+    def entropy_over_classes(self, classes: List[List[str]]) -> float:
+        '''
+        Calculates the entropy over a list of classes
+        '''
+        n = sum([len(cls) for cls in classes])
+        # get probability of each class
+        probs = [len(cls) / n for cls in classes]
+        # calculate entropy
+        entropy = -sum([p * np.log2(p) for p in probs])
+        return entropy
 
+    def get_semantic_entropy(self, question, responses):
+        '''
+        Implements Algorithm 1 from Kuhn et al. https://arxiv.org/pdf/2302.09664.pdf
+        '''
+        print()
+        print(self.model.device)
+        print('Responses:', responses)
+        classes = [[responses[0]]]
+        for response_idx in range(1, len(responses)):
+            # print(classes)
+            response = responses[response_idx]
+            lonely = True
+            for cls_idx, cls in enumerate(classes):
+                # take the first element from the class to make the comparison
+                cls_sample = cls[0]
+                # add an exact match check to speed things up
+                if response == cls_sample:
+                    cls.append(response)
+                    lonely = False
+                    break
+
+                elif self._compare(question, cls_sample, response)['deberta_prediction'] == 1:
+                    classes[cls_idx].append(response)
+                    lonely = False
+                    break
+            if lonely:
+                classes.append([response])
+        print('Classes:', classes)
+        print('Num Classes:', len(classes))
+        entropy = self.entropy_over_classes(classes)
+        print('Entropy:', entropy)
+        return entropy
+        
     @torch.no_grad()
     def _batch_pred(self, sen_1: list, sen_2: list, max_batch_size=128):
         inputs = [_[0] + ' [SEP] ' + _[1] for _ in zip(sen_1, sen_2)]
@@ -137,8 +183,8 @@ class ClassifyWrapper():
     def _pred(self, sen_1: str, sen_2: str):
         input = sen_1 + ' [SEP] ' + sen_2
         input_ids = self.tokenizer.encode(input, return_tensors='pt').to(self.model.device)
-
-        logits = self.model(input_ids)['logits']
+        out = self.model(input_ids=input_ids)
+        logits = out.logits
         # logits: [Contradiction, neutral, entailment]
         return logits
 
@@ -151,9 +197,12 @@ class ClassifyWrapper():
         pred_1 = self._pred(f"{question} {ans_1}", f'{question} {ans_2}')
         pred_2 = self._pred(f"{question} {ans_2}", f'{question} {ans_1}')
         preds = torch.concat([pred_1, pred_2], 0)
+        
+        # Check if both predictions are entailment (index 2)
+        deberta_prediction = 1 if (preds.argmax(1) == 2).all() else 0
 
-        deberta_prediction = 0 if preds.argmax(1).min() == 0 else 1
+        # deberta prediction is 1 if both predictions are entailment
         return {'deberta_prediction': deberta_prediction,
                 'prob': torch.softmax(preds,1).mean(0).cpu(),
                 'pred': preds.cpu()
-                }
+            }
