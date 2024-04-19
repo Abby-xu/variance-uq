@@ -116,7 +116,6 @@ class ClassifyWrapper():
         Implements Algorithm 1 from Kuhn et al. https://arxiv.org/pdf/2302.09664.pdf
         '''
         print()
-        print(self.model.device)
         print('Responses:', responses)
         classes = [[responses[0]]]
         for response_idx in range(1, len(responses)):
@@ -173,7 +172,8 @@ class ClassifyWrapper():
         if len(indices) > 0:
             sim_mat_batch_flat = self._batch_pred(anss_1, anss_2)
             for _, (i,j) in enumerate(indices):
-                sim_mat_batch[i,j] = sim_mat_batch_flat[_]
+                # return preds instead of logits
+                sim_mat_batch[i,j] = torch.nn.functional.softmax(sim_mat_batch_flat[_])
         return dict(
             mapping = [_rev_mapping[_] for _ in answers],
             sim_mat = sim_mat_batch

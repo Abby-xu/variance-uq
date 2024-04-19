@@ -2,3 +2,4 @@ from .embedding_variance import calculate_embedding_variance_from_embeddings, ca
 from .exact_match_entropy import calculate_exact_match_entropy
 from .rouge_l import calculate_rouge_l, calculate_rouge_l_uncertainty
 from .semantic_entropy import calculate_num_semantic_sets, calculate_semantic_entropy, ClassifyWrapper
+from .eigv import calculate_eigv, calculate_ecc

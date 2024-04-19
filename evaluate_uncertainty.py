@@ -61,6 +61,8 @@ def evaluate_uncertainty(responses, tokenizer: AutoTokenizer, model: AutoModel, 
     rouge_l_uncertainty = torch.zeros(responses.shape[0])
     # num_sets_uncertainty = torch.zeros(responses.shape[0])
     semantic_entropy_uncertainty = torch.zeros(responses.shape[0])
+    eigv_uncertainty = torch.zeros(responses.shape[0])
+    ecc_uncertainty = torch.zeros(responses.shape[0])
 
     for idx in range(responses.shape[0]):
         sample_results = responses[idx].flatten()
@@ -69,11 +71,17 @@ def evaluate_uncertainty(responses, tokenizer: AutoTokenizer, model: AutoModel, 
         rouge_l_uncertainty[idx] = uncertainty.calculate_rouge_l_uncertainty(sample_results)
         # num_sets_uncertainty[idx] = uncertainty.calculate_num_semantic_sets(original_question, sample_results)
         semantic_entropy_uncertainty[idx] = uncertainty.calculate_semantic_entropy(original_question, sample_results, classify_wrapper)
-        print(idx, semantic_entropy_uncertainty[idx])
+        eigv_uncertainty[idx] = uncertainty.calculate_eigv(original_question, sample_results, classify_wrapper)
+        ecc_uncertainty[idx] = uncertainty.calculate_ecc(original_question, sample_results, classify_wrapper)
+        print('Semantic Entropy:', semantic_entropy_uncertainty[idx])
+        print('Eigv:', eigv_uncertainty[idx])
+        print('Ecc:', ecc_uncertainty[idx])
 
     uncertainty_results['exact_match_uncertainty'] = exact_match_uncertainty
     uncertainty_results['rouge_l_uncertainty'] = rouge_l_uncertainty
     # uncertainty_results['num_sets_uncertainty'] = num_sets_uncertainty
     uncertainty_results['semantic_entropy_uncertainty'] = semantic_entropy_uncertainty
+    uncertainty_results['eigv_uncertainty'] = eigv_uncertainty
+    uncertainty_results['ecc_uncertainty'] = ecc_uncertainty
 
     return uncertainty_results

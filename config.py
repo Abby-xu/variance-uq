@@ -28,6 +28,10 @@ def initialize_components(args):
         tokenizer = models.get_sapbert_model()
         model = models.get_sapbert_tokenizer()
         return tokenizer, model
+    elif args.embedding_model == 'sfr-embedding-mistral':
+        tokenizer = models.get_mistral_tokenizer()
+        model = models.get_mistral_model()
+        return tokenizer, model
     elif args.embedding_model == 'entailment':
         tokenizer = models.get_entailment_tokenizer()
         model = models.get_entailment_model()

@@ -50,5 +50,7 @@ def evaluate_accuracy(
     
     accuracy_results['exact_match'] = exact_match_accuracy_results
     accuracy_results['ask_for_accuracy'] = ask_for_accuracy_results
+    print ('Exact Match Accuracy:', exact_match_accuracy_results.mean().mean())
+    print ('Ask for Accuracy:', ask_for_accuracy_results.mean().mean())
     return accuracy_results
                 
