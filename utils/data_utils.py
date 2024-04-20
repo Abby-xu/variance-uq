@@ -125,11 +125,44 @@ def load_dataset(args, shuffle=False):
     
     elif args.dataset == 'coqa':
         # conversational qa
-        raise NotImplementedError
+        split = 'validation'
+        data = datasets.load_dataset("coqa", split=split)
+        
+        data = [{
+            'index': i,
+            'input': f"{_['story']} Q: {_['questions'][0]['input_text']}",
+            'answer': _['answers'][0]['input_text']
+        } for i, _ in enumerate(data)]
+        
+        if shuffle:
+            np.random.shuffle(data)
+            
+        # only choose args.n_test samples
+        data = data[:args.n_test]
+        return data
+        
+        # raise NotImplementedError
 
     elif args.dataset == 'nq':
         # natural questions
-        raise NotImplementedError
+        split = 'validation'
+        data = datasets.load_dataset("nq_open", split=split)
+        
+        data = [_ for _ in data if _['annotations']['short_answers']]
+        
+        data = [{
+            'index': i,
+            'input': _['question'],
+            'answer': _['annotations']['short_answers'][0]['text']
+        } for i, _ in enumerate(data) if _['annotations']['short_answers']]
+        
+        if shuffle:
+            np.random.shuffle(data)
+            
+        data = data[:args.n_test]
+        return data
+        
+        # raise NotImplementedError
     
     else:
         raise NotImplementedError
