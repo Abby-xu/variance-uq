@@ -1,10 +1,11 @@
 import os
 import openai
 import backoff
+import config
 
 completion_tokens = prompt_tokens = 0
 
-openai.api_key = config.api_key
+openai.api_key = config.openai_api_key
 
 api_base = os.getenv("OPENAI_API_BASE", "")
 if api_base != "":

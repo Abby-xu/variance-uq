@@ -11,6 +11,7 @@ from torch import Tensor
 from transformers import AutoModel, AutoTokenizer
 import argparse
 import json
+import config
 
 device = config.device
 openai.api_key = config.openai_api_key
@@ -126,14 +127,21 @@ def load_dataset(args, shuffle=False):
     elif args.dataset == 'coqa':
         # conversational qa
         split = 'validation'
-        data = datasets.load_dataset("coqa", split=split)
+        ori_data = datasets.load_dataset("coqa", split=split)
         
-        data = [{
-            'index': i,
-            'input': f"{_['story']} Q: {_['questions'][0]['input_text']}",
-            'answer': _['answers'][0]['input_text']
-        } for i, _ in enumerate(data)]
-        
+        data = []
+        idx = 0
+        for item in ori_data:
+            story = item['story']
+            for i in range(len(item['questions'])):
+                query = {
+                    'index': idx,
+                    'input': story+'\nQuestion: '+item['questions'][i],
+                    'answer': item['answers']['input_text'][i]
+                }
+                data.append(query)
+                idx += 1
+            
         if shuffle:
             np.random.shuffle(data)
             
@@ -148,13 +156,11 @@ def load_dataset(args, shuffle=False):
         split = 'validation'
         data = datasets.load_dataset("nq_open", split=split)
         
-        data = [_ for _ in data if _['annotations']['short_answers']]
-        
         data = [{
             'index': i,
             'input': _['question'],
-            'answer': _['annotations']['short_answers'][0]['text']
-        } for i, _ in enumerate(data) if _['annotations']['short_answers']]
+            'answer': _['answer'][0]
+        } for i, _ in enumerate(data)]
         
         if shuffle:
             np.random.shuffle(data)

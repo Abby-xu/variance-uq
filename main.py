@@ -156,7 +156,7 @@ def experiment(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the evaluation of the model")
-    parser.add_argument("--dataset", type=str, default="trivia_qa", choices=['trivia_qa', 'geneset'], help="The dataset to use")
+    parser.add_argument("--dataset", type=str, default="trivia_qa", choices=['trivia_qa', 'geneset', 'coqa', 'nq'], help="The dataset to use")
     parser.add_argument("--split", type=str, default="validation", help="The split to evaluate on")
     parser.add_argument("--model", type=str, default="gpt-3.5-turbo", help="The model to use")
     parser.add_argument("--n_test", type=int, default=10, help="The number of validation samples to test")
